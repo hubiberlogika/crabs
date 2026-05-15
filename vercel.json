@@ -1,9 +1,9 @@
 {
-  "buildCommand": "cd ig-scraper/frontend && npm install && npm run build",
-  "outputDirectory": "ig-scraper/frontend/dist",
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
   "framework": null,
   "functions": {
-    "ig-scraper/api/index.py": {
+    "api/index.py": {
       "runtime": "python3.12",
       "maxDuration": 300
     }
@@ -11,7 +11,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/ig-scraper/api/index.py"
+      "destination": "/api/index.py"
     },
     {
       "source": "/((?!api/).*)",
