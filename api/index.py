@@ -244,9 +244,9 @@ async def delete_all_properties():
         
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM properties")
+            cur.execute("DELETE FROM properties WHERE is_manual = FALSE OR is_manual IS NULL")
             conn.commit()
-        return {"message": "Semua data berhasil dihapus"}
+        return {"message": "Data hasil scraping berhasil dihapus (data manual aman)"}
     except Exception as e:
         if conn:
             conn.rollback()
