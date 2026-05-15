@@ -71,13 +71,14 @@ def parse_caption(caption: str) -> Dict[str, Optional[str]]:
     
     # Agen & No HP
     agent_name = None
-    pm = re.search(r'([A-Za-z\s]{3,20}?)\s*[\(\-\:]?\s*((?:08|\+62)[\d\s\-\+‑\u202a\u202c]{8,15})\)?', caption)
+    pm = re.search(r'([A-Za-z\s\.]{2,20}?)\s*[\(\-\:]?\s*((?:08|\+62|62)[\d\s\-\+‑\u202a\u202c]{8,15})\)?', caption)
     if pm:
         name = pm.group(1).strip()
-        name = re.sub(r'^(?:▫️|•|\*|-|Hubungi|Agent|Detail\s*:|more\s*info\s*:?)\s*', '', name, flags=re.IGNORECASE).strip()
+        name = re.sub(r'^(?:▫️|•|\*|-|Hubungi|Agent|Detail\s*:|more\s*info\s*:?|WA|Call|Hp)\s*', '', name, flags=re.IGNORECASE).strip()
         phone = re.sub(r'[^\d\+]', '', pm.group(2))
-        if len(name) > 1:
-            agent_name = f"{name} ({phone})"
+        if len(name) < 2:
+            name = "Agen"
+        agent_name = f"{name} ({phone})"
 
     return {
         'price': price,
@@ -129,9 +130,9 @@ def scrape_instagram_account(target_username: str, viewer_user: str = None, view
             
         parsed = parse_caption(caption)
         
-        # Fallback if agent name not found
-        if not parsed.get('agent_name'):
-            parsed['agent_name'] = f"@{target_username}"
+        # Abaikan/ignore jika data properti tidak valid (harus ada harga dan kontak agen/HP)
+        if not parsed.get('agent_name') or not parsed.get('price'):
+            continue
             
         parsed['ig_post_url'] = f'https://www.instagram.com/p/{media.code}/'
         parsed['scraped_at'] = media.taken_at.isoformat() if media.taken_at else datetime.utcnow().isoformat()
