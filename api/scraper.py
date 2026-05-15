@@ -106,10 +106,25 @@ def get_client(username=None, password=None, session_id=None):
             cl.login_by_sessionid(session_id)
             return cl
         except Exception as e:
+            err_str = str(e)
+            if "ChallengeResolve" in err_str or "challenge" in err_str.lower():
+                raise Exception(
+                    "Session ID sudah kadaluwarsa/diblokir Instagram. "
+                    "Silakan ambil Session ID baru: Login di instagram.com -> F12 -> Application -> Cookies -> salin nilai sessionid -> update di Vercel ENV."
+                )
             logger.warning(f"Login via Session ID gagal: {e}")
             
     if username and password:
-        cl.login(username, password)
+        try:
+            cl.login(username, password)
+        except Exception as e:
+            err_str = str(e)
+            if "ChallengeResolve" in err_str or "challenge" in err_str.lower():
+                raise Exception(
+                    "Akun bot memerlukan verifikasi keamanan Instagram. "
+                    "Gunakan Session ID sebagai gantinya, atau selesaikan tantangan verifikasi secara manual di browser."
+                )
+            raise
     return cl
 
 def scrape_instagram_account(target_username: str, viewer_user: str = None, viewer_pass: str = None, session_id: str = None, limit: int = 10):
