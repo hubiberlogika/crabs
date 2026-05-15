@@ -48,10 +48,7 @@ function App() {
       setStatusMsg("Mohon isi Target Username!");
       return;
     }
-    if (!sessionId && (!viewerUsername || !viewerPassword)) {
-      setStatusMsg("Isi Session ID atau (Username & Password)!");
-      return;
-    }
+
     setLoading(true);
     setStatusMsg("Sedang memulai proses...");
     try {
