@@ -57,6 +57,10 @@ def init_db():
                 """)
             conn.commit()
             print("Database table ensured.")
+            
+            with conn.cursor() as cur:
+                cur.execute("ALTER TABLE properties ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE")
+            conn.commit()
         except Exception as e:
             print(f"Error initializing DB: {e}")
         finally:
@@ -161,6 +165,42 @@ async def get_properties():
         return {"error": str(e), "data": []}
     finally:
         conn.close()
+
+@app.post("/api/properties/manual")
+async def create_manual_property(prop: dict):
+    conn = get_db_connection()
+    if not conn:
+        return {"error": "Database URL belum dikonfigurasi"}
+        
+    try:
+        # Fill missing fields with empty string
+        fields = ['price', 'land_area', 'building_area', 'bedrooms', 'bathrooms', 'floors', 
+                  'facilities', 'carport', 'electricity', 'water', 'certificate', 'agent_name', 'description']
+        for f in fields:
+            if f not in prop:
+                prop[f] = ""
+                
+        query = """
+            INSERT INTO properties (
+                price, land_area, building_area, bedrooms, bathrooms, floors,
+                facilities, carport, electricity, water, certificate, agent_name, description, is_manual, scraped_at
+            ) VALUES (
+                %(price)s, %(land_area)s, %(building_area)s, %(bedrooms)s, %(bathrooms)s, %(floors)s,
+                %(facilities)s, %(carport)s, %(electricity)s, %(water)s, %(certificate)s, %(agent_name)s, %(description)s, TRUE, CURRENT_TIMESTAMP
+            ) RETURNING *
+        """
+        with conn.cursor() as cur:
+            cur.execute(query, prop)
+            new_row = cur.fetchone()
+            conn.commit()
+        return {"message": "Data manual berhasil ditambahkan", "data": new_row}
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
 
 @app.put("/api/properties/{prop_id}")
 async def update_property(prop_id: str, updates: dict):

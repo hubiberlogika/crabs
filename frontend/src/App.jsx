@@ -5,7 +5,9 @@ function App() {
   const [activeTab, setActiveTab] = useState('target');
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'card'
   const [properties, setProperties] = useState([]);
-  const [editingCell, setEditingCell] = useState(null);
+  
+  // Modal state
+  const [selectedProp, setSelectedProp] = useState(null);
   
   // Scraper form state
   const [targetUsername, setTargetUsername] = useState('');
@@ -13,7 +15,6 @@ function App() {
   const [viewerPassword, setViewerPassword] = useState(localStorage.getItem('ig_viewer_pass') || '');
   const [sessionId, setSessionId] = useState(localStorage.getItem('ig_session_id') || '');
   
-  // Handlers untuk save auto ke localStorage
   const handleSessionChange = (val) => { setSessionId(val); localStorage.setItem('ig_session_id', val); }
   const handleUserChange = (val) => { setViewerUsername(val); localStorage.setItem('ig_viewer_user', val); }
   const handlePassChange = (val) => { setViewerPassword(val); localStorage.setItem('ig_viewer_pass', val); }
@@ -81,19 +82,32 @@ function App() {
     }
   };
 
-  const handleEdit = async (id, field, value) => {
-    // Optimistic UI update
-    setProperties(properties.map(p => p.id === id ? { ...p, [field]: value } : p));
-    
-    // API Call
+  const handleSaveProp = async (updatedProp) => {
     try {
-      await fetch(`${API_URL}/api/properties/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value })
-      });
+      if (updatedProp.id) {
+        // Update existing (PUT)
+        await fetch(`${API_URL}/api/properties/${updatedProp.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedProp)
+        });
+        setProperties(properties.map(p => p.id === updatedProp.id ? updatedProp : p));
+      } else {
+        // Create manual (POST)
+        const res = await fetch(`${API_URL}/api/properties/manual`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedProp)
+        });
+        const result = await res.json();
+        if (result.data) {
+          setProperties([result.data, ...properties]);
+        }
+      }
+      setSelectedProp(null);
     } catch (err) {
-      console.error("Gagal update data:", err);
+      console.error("Gagal save data:", err);
+      alert("Gagal menyimpan data!");
     }
   };
 
@@ -107,7 +121,12 @@ function App() {
     }
   };
 
-  const filteredProperties = properties.filter(prop => {
+  const scrapedProperties = properties.filter(p => !p.is_manual);
+  const manualProperties = properties.filter(p => p.is_manual);
+  
+  const activeList = activeTab === 'listing' ? manualProperties : scrapedProperties;
+
+  const filteredProperties = activeList.filter(prop => {
     if (agentFilter && prop.agent_name) {
       const name = prop.agent_name.split('(')[0].trim();
       if (!name.toLowerCase().includes(agentFilter.toLowerCase())) return false;
@@ -241,7 +260,16 @@ function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: '15px' }}>
               <div className="filters-scroll" style={{ marginBottom: 0, paddingBottom: 0, display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <div className="filter-pill" onClick={fetchProperties} style={{ cursor: 'pointer' }}>🔄 Refresh Data</div>
-                <div className="filter-pill" onClick={handleDeleteAll} style={{ cursor: 'pointer', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.5)' }}>🗑️ Hapus Semua Data</div>
+                
+                {activeTab === 'listing' && (
+                  <div className="filter-pill" onClick={() => setSelectedProp({})} style={{ cursor: 'pointer', background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', border: '1px solid #10b981' }}>
+                    ➕ Tambah Manual
+                  </div>
+                )}
+                
+                {activeTab === 'hasil' && (
+                  <div className="filter-pill" onClick={handleDeleteAll} style={{ cursor: 'pointer', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.5)' }}>🗑️ Hapus Semua Data</div>
+                )}
                 
                 <select 
                   className="filter-pill" 
@@ -250,7 +278,7 @@ function App() {
                   onChange={(e) => setAgentFilter(e.target.value)}
                 >
                   <option value="" style={{color: 'black'}}>👤 Semua Agen</option>
-                  {[...new Set(properties.map(p => {
+                  {[...new Set(activeList.map(p => {
                     const name = p.agent_name?.split('(')[0].trim();
                     return name && name.length > 2 ? name : null;
                   }).filter(Boolean))].map(agent => (
@@ -265,7 +293,7 @@ function App() {
               </div>
             </div>
 
-            {viewMode === 'table' ? (
+            {viewMode === 'table' || activeTab === 'listing' ? (
               <div className="table-container glass">
                 <table>
                   <thead>
@@ -287,116 +315,48 @@ function App() {
                   </thead>
                   <tbody>
                     {filteredProperties.map(prop => (
-                      <tr key={prop.id}>
-                        <EditableCell 
-                          value={prop.price || '-'} 
-                          isEditing={editingCell?.id === prop.id && editingCell?.field === 'price'}
-                          onDoubleClick={() => setEditingCell({ id: prop.id, field: 'price' })}
-                          onChange={(val) => handleEdit(prop.id, 'price', val)}
-                          onBlur={() => setEditingCell(null)}
-                        />
-                        <EditableCell 
-                          value={prop.land_area || '-'} 
-                          isEditing={editingCell?.id === prop.id && editingCell?.field === 'land_area'}
-                          onDoubleClick={() => setEditingCell({ id: prop.id, field: 'land_area' })}
-                          onChange={(val) => handleEdit(prop.id, 'land_area', val)}
-                          onBlur={() => setEditingCell(null)}
-                        />
-                        <EditableCell 
-                          value={prop.building_area || '-'} 
-                          isEditing={editingCell?.id === prop.id && editingCell?.field === 'building_area'}
-                          onDoubleClick={() => setEditingCell({ id: prop.id, field: 'building_area' })}
-                          onChange={(val) => handleEdit(prop.id, 'building_area', val)}
-                          onBlur={() => setEditingCell(null)}
-                        />
-                        <EditableCell 
-                          value={prop.bedrooms || '-'} 
-                          isEditing={editingCell?.id === prop.id && editingCell?.field === 'bedrooms'}
-                          onDoubleClick={() => setEditingCell({ id: prop.id, field: 'bedrooms' })}
-                          onChange={(val) => handleEdit(prop.id, 'bedrooms', val)}
-                          onBlur={() => setEditingCell(null)}
-                        />
-                        <EditableCell 
-                          value={prop.bathrooms || '-'} 
-                          isEditing={editingCell?.id === prop.id && editingCell?.field === 'bathrooms'}
-                          onDoubleClick={() => setEditingCell({ id: prop.id, field: 'bathrooms' })}
-                          onChange={(val) => handleEdit(prop.id, 'bathrooms', val)}
-                          onBlur={() => setEditingCell(null)}
-                        />
-                        <EditableCell 
-                          value={prop.floors || '-'} 
-                          isEditing={editingCell?.id === prop.id && editingCell?.field === 'floors'}
-                          onDoubleClick={() => setEditingCell({ id: prop.id, field: 'floors' })}
-                          onChange={(val) => handleEdit(prop.id, 'floors', val)}
-                          onBlur={() => setEditingCell(null)}
-                        />
-                        <EditableCell 
-                          value={prop.agent_name || '-'} 
-                          isEditing={editingCell?.id === prop.id && editingCell?.field === 'agent_name'}
-                          onDoubleClick={() => setEditingCell({ id: prop.id, field: 'agent_name' })}
-                          onChange={(val) => handleEdit(prop.id, 'agent_name', val)}
-                          onBlur={() => setEditingCell(null)}
-                        />
-                        <EditableCell 
-                          value={prop.facilities || '-'} 
-                          isEditing={editingCell?.id === prop.id && editingCell?.field === 'facilities'}
-                          onDoubleClick={() => setEditingCell({ id: prop.id, field: 'facilities' })}
-                          onChange={(val) => handleEdit(prop.id, 'facilities', val)}
-                          onBlur={() => setEditingCell(null)}
-                        />
-                        <EditableCell 
-                          value={prop.carport || '-'} 
-                          isEditing={editingCell?.id === prop.id && editingCell?.field === 'carport'}
-                          onDoubleClick={() => setEditingCell({ id: prop.id, field: 'carport' })}
-                          onChange={(val) => handleEdit(prop.id, 'carport', val)}
-                          onBlur={() => setEditingCell(null)}
-                        />
-                        <EditableCell 
-                          value={prop.electricity || '-'} 
-                          isEditing={editingCell?.id === prop.id && editingCell?.field === 'electricity'}
-                          onDoubleClick={() => setEditingCell({ id: prop.id, field: 'electricity' })}
-                          onChange={(val) => handleEdit(prop.id, 'electricity', val)}
-                          onBlur={() => setEditingCell(null)}
-                        />
-                        <EditableCell 
-                          value={prop.water || '-'} 
-                          isEditing={editingCell?.id === prop.id && editingCell?.field === 'water'}
-                          onDoubleClick={() => setEditingCell({ id: prop.id, field: 'water' })}
-                          onChange={(val) => handleEdit(prop.id, 'water', val)}
-                          onBlur={() => setEditingCell(null)}
-                        />
-                        <EditableCell 
-                          value={prop.certificate || '-'} 
-                          isEditing={editingCell?.id === prop.id && editingCell?.field === 'certificate'}
-                          onDoubleClick={() => setEditingCell({ id: prop.id, field: 'certificate' })}
-                          onChange={(val) => handleEdit(prop.id, 'certificate', val)}
-                          onBlur={() => setEditingCell(null)}
-                        />
-                        <td>
-                          <a href={prop.ig_post_url} target="_blank" rel="noreferrer" className="action-link">Buka IG</a>
+                      <tr key={prop.id} onClick={() => setSelectedProp(prop)} style={{cursor: 'pointer'}} className="hover-row">
+                        <td>{prop.price || '-'}</td>
+                        <td>{prop.land_area || '-'}</td>
+                        <td>{prop.building_area || '-'}</td>
+                        <td>{prop.bedrooms || '-'}</td>
+                        <td>{prop.bathrooms || '-'}</td>
+                        <td>{prop.floors || '-'}</td>
+                        <td>{prop.agent_name || '-'}</td>
+                        <td>{prop.facilities || '-'}</td>
+                        <td>{prop.carport || '-'}</td>
+                        <td>{prop.electricity || '-'}</td>
+                        <td>{prop.water || '-'}</td>
+                        <td>{prop.certificate || '-'}</td>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          {prop.ig_post_url ? (
+                            <a href={prop.ig_post_url} target="_blank" rel="noreferrer" className="action-link">Buka IG</a>
+                          ) : '-'}
                         </td>
                       </tr>
                     ))}
                     {filteredProperties.length === 0 && (
                       <tr>
                         <td colSpan="13" style={{textAlign: 'center', padding: '20px', color: 'var(--text-muted)'}}>
-                          Belum ada data properti atau agen tidak ditemukan.
+                          Belum ada data properti.
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
                 <p style={{textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '10px', paddingBottom: '10px'}}>
-                  Tap 2x untuk edit manual. Data tersimpan otomatis ke Neon DB.
+                  Klik pada baris data untuk melihat detail dan mengedit (Modal Editor).
                 </p>
               </div>
             ) : (
               <div className="cards-grid">
                 {filteredProperties.map(prop => (
-                  <div key={prop.id} className="property-card glass">
+                  <div key={prop.id} className="property-card glass" onClick={() => setSelectedProp(prop)} style={{cursor: 'pointer'}}>
                     <div className="card-header">
                       <div className="card-price">{prop.price || 'Harga -'}</div>
-                      <a href={prop.ig_post_url} target="_blank" rel="noreferrer" className="action-link">Buka IG</a>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        {prop.ig_post_url ? <a href={prop.ig_post_url} target="_blank" rel="noreferrer" className="action-link">Buka IG</a> : ''}
+                      </div>
                     </div>
                     <div className="card-agent">👤 {prop.agent_name || 'Tidak diketahui'}</div>
                     
@@ -418,13 +378,13 @@ function App() {
                     
                     <div className="card-footer">
                       <span>Diambil: {new Date(prop.scraped_at).toLocaleDateString('id-ID')}</span>
-                      <span style={{color: 'var(--accent)', cursor: 'pointer', fontWeight: 500}} onClick={() => setViewMode('table')}>✏️ Edit (via Tabel)</span>
+                      <span style={{color: 'var(--accent)', fontWeight: 500}}>🔍 Detail/Edit</span>
                     </div>
                   </div>
                 ))}
                 {filteredProperties.length === 0 && (
                   <div style={{textAlign: 'center', padding: '20px', color: 'var(--text-muted)', gridColumn: '1 / -1'}}>
-                    Belum ada data properti atau agen tidak ditemukan.
+                    Belum ada data properti.
                   </div>
                 )}
               </div>
@@ -432,29 +392,105 @@ function App() {
           </div>
         )}
       </main>
+      
+      {/* Detail / Edit Modal */}
+      {selectedProp && (
+        <PropertyModal 
+          prop={selectedProp} 
+          onClose={() => setSelectedProp(null)} 
+          onSave={handleSaveProp} 
+        />
+      )}
     </div>
   );
 }
 
-function EditableCell({ value, isEditing, onDoubleClick, onChange, onBlur }) {
-  if (isEditing) {
-    return (
-      <td className="editable">
-        <input 
-          autoFocus
-          className="edit-input"
-          value={value === '-' ? '' : value} 
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={onBlur}
-          onKeyDown={(e) => { if (e.key === 'Enter') onBlur() }}
-        />
-      </td>
-    );
-  }
+function PropertyModal({ prop, onClose, onSave }) {
+  // If prop has no ID, it means it's a NEW manual property. Always start in edit mode.
+  const isNew = !prop.id;
+  const [isEditing, setIsEditing] = useState(isNew);
+  const [formData, setFormData] = useState(prop);
+
+  const handleChange = (field, val) => {
+    setFormData(prev => ({...prev, [field]: val}));
+  };
+
+  const handleSave = () => {
+    onSave(formData);
+  };
+
+  const fields = [
+    { key: 'price', label: 'Harga', width: 'half' },
+    { key: 'agent_name', label: 'Nama & Kontak Agen', width: 'half' },
+    { key: 'land_area', label: 'Luas Tanah', width: 'half' },
+    { key: 'building_area', label: 'Luas Bangunan', width: 'half' },
+    { key: 'bedrooms', label: 'Kamar Tidur', width: 'half' },
+    { key: 'bathrooms', label: 'Kamar Mandi', width: 'half' },
+    { key: 'floors', label: 'Jumlah Lantai', width: 'half' },
+    { key: 'carport', label: 'Carport', width: 'half' },
+    { key: 'electricity', label: 'Listrik', width: 'half' },
+    { key: 'water', label: 'Sumber Air', width: 'half' },
+    { key: 'certificate', label: 'Sertifikat', width: 'full' },
+    { key: 'facilities', label: 'Fasilitas Lainnya', width: 'full' },
+    { key: 'description', label: 'Deskripsi Full', width: 'full', type: 'textarea' },
+  ];
+
   return (
-    <td className="editable" onClick={onDoubleClick}>
-      {value}
-    </td>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>{isNew ? 'Tambah Properti Manual' : 'Detail Properti'}</h2>
+          <button className="modal-close" onClick={onClose}>&times;</button>
+        </div>
+        
+        <div className="modal-body">
+          {fields.map(f => (
+            <div key={f.key} className={`form-group ${f.width === 'full' ? 'full-width' : ''}`}>
+              <label>{f.label}</label>
+              {isEditing ? (
+                f.type === 'textarea' ? (
+                  <textarea 
+                    className="form-input" 
+                    rows={4} 
+                    value={formData[f.key] || ''} 
+                    onChange={e => handleChange(f.key, e.target.value)}
+                  />
+                ) : (
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={formData[f.key] || ''} 
+                    onChange={e => handleChange(f.key, e.target.value)}
+                  />
+                )
+              ) : (
+                <div style={{
+                  padding: '12px 16px', 
+                  background: 'rgba(255,255,255,0.03)', 
+                  borderRadius: '12px',
+                  border: '1px solid transparent',
+                  minHeight: '44px',
+                  whiteSpace: f.type === 'textarea' ? 'pre-wrap' : 'normal'
+                }}>
+                  {formData[f.key] || '-'}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        
+        <div style={{ display: 'flex', gap: '10px', marginTop: '20px', justifyContent: 'flex-end' }}>
+          {!isEditing ? (
+            <button className="btn-primary" onClick={() => setIsEditing(true)}>Edit Data</button>
+          ) : (
+            <>
+              {!isNew && <button className="btn-primary" style={{background: 'transparent', border: '1px solid var(--text-muted)'}} onClick={() => { setFormData(prop); setIsEditing(false); }}>Batal</button>}
+              <button className="btn-primary" style={{background: 'var(--success)'}} onClick={handleSave}>Simpan</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
