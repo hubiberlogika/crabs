@@ -21,12 +21,12 @@ def parse_caption(caption: str) -> Dict[str, Optional[str]]:
     
     # Luas Tanah
     land_area = None
-    m = re.search(r'\b(?:Luas\s+Tanah|LT)\b\s*[:\-\.=]?\s*(\d+[\s]*(?:m2|m|meter)?)', caption, re.IGNORECASE)
+    m = re.search(r'\b(?:Luas\s+Tanah|LT)\b\s*[:\-\.=]?\s*(\d+)', caption, re.IGNORECASE)
     if m: land_area = m.group(1).strip()
     
     # Luas Bangunan
     building_area = None
-    m = re.search(r'\b(?:Luas\s+Bangunan|LB)\b\s*[:\-\.=]?\s*(\d+[\s]*(?:m2|m|meter)?)', caption, re.IGNORECASE)
+    m = re.search(r'\b(?:Luas\s+Bangunan|LB)\b\s*[:\-\.=]?\s*(\d+)', caption, re.IGNORECASE)
     if m: building_area = m.group(1).strip()
     
     # Kamar Tidur

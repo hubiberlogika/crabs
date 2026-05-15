@@ -26,7 +26,7 @@ function App() {
   const API_URL = import.meta.env.DEV ? 'http://localhost:8000' : '';
 
   useEffect(() => {
-    if (activeTab === 'hasil') {
+    if (activeTab === 'hasil' || activeTab === 'listing') {
       fetchProperties();
     }
   }, [activeTab]);
@@ -67,6 +67,7 @@ function App() {
       if (res.ok) {
         setStatusMsg(data.message || "Proses scraping selesai.");
         setTimeout(() => {
+          fetchProperties();
           setActiveTab('hasil');
           setStatusMsg('');
         }, 1500);
@@ -131,7 +132,13 @@ function App() {
           className={`tab-btn ${activeTab === 'hasil' ? 'active' : ''}`}
           onClick={() => setActiveTab('hasil')}
         >
-          Hasil
+          Hasil Scraping
+        </button>
+        <button 
+          className={`tab-btn ${activeTab === 'listing' ? 'active' : ''}`}
+          onClick={() => setActiveTab('listing')}
+        >
+          Listing Property
         </button>
       </div>
 
@@ -385,7 +392,7 @@ function App() {
               </div>
             ) : (
               <div className="cards-grid">
-                {properties.map(prop => (
+                {filteredProperties.map(prop => (
                   <div key={prop.id} className="property-card glass">
                     <div className="card-header">
                       <div className="card-price">{prop.price || 'Harga -'}</div>
