@@ -191,3 +191,22 @@ async def update_property(prop_id: str, updates: dict):
     finally:
         if conn:
             conn.close()
+
+@app.delete("/api/properties")
+async def delete_all_properties():
+    conn = get_db_connection()
+    if not conn:
+        return {"error": "Database URL belum dikonfigurasi"}
+        
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM properties")
+            conn.commit()
+        return {"message": "Semua data berhasil dihapus"}
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()

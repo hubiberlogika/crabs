@@ -96,6 +96,16 @@ function App() {
     }
   };
 
+  const handleDeleteAll = async () => {
+    if (!window.confirm("Yakin ingin menghapus SEMUA data dari database?")) return;
+    try {
+      const res = await fetch(`${API_URL}/api/properties`, { method: 'DELETE' });
+      if (res.ok) setProperties([]);
+    } catch (err) {
+      console.error("Gagal menghapus data:", err);
+    }
+  };
+
   const filteredProperties = properties.filter(prop => {
     if (agentFilter && prop.agent_name) {
       const name = prop.agent_name.split('(')[0].trim();
@@ -224,6 +234,7 @@ function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: '15px' }}>
               <div className="filters-scroll" style={{ marginBottom: 0, paddingBottom: 0, display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <div className="filter-pill" onClick={fetchProperties} style={{ cursor: 'pointer' }}>🔄 Refresh Data</div>
+                <div className="filter-pill" onClick={handleDeleteAll} style={{ cursor: 'pointer', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.5)' }}>🗑️ Hapus Semua Data</div>
                 
                 <select 
                   className="filter-pill" 
