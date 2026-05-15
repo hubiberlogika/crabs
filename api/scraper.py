@@ -130,8 +130,8 @@ def scrape_instagram_account(target_username: str, viewer_user: str = None, view
             
         parsed = parse_caption(caption)
         
-        # Abaikan/ignore jika data properti tidak valid (harus ada harga dan kontak agen/HP)
-        if not parsed.get('agent_name') or not parsed.get('price'):
+        # Abaikan/ignore HANYA jika tidak ada kontak agen/HP
+        if not parsed.get('agent_name'):
             continue
             
         parsed['ig_post_url'] = f'https://www.instagram.com/p/{media.code}/'
