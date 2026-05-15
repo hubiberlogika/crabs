@@ -72,55 +72,55 @@ class ScrapeRequest(BaseModel):
     limit: int = 10
 
 def process_scraping(req: ScrapeRequest):
-    try:
-        results = scrape_instagram_account(
-            target_username=req.target_username,
-            viewer_user=req.viewer_username,
-            viewer_pass=req.viewer_password,
-            session_id=req.session_id,
-            limit=req.limit
-        )
-        
-        conn = get_db_connection()
-        if conn:
-            try:
-                with conn.cursor() as cur:
-                    for item in results:
-                        cur.execute("""
-                            INSERT INTO properties (
-                                ig_post_url, price, land_area, building_area, bedrooms, 
-                                bathrooms, floors, facilities, carport, electricity, 
-                                water, certificate, agent_name, description, scraped_at
-                            ) VALUES (
-                                %(ig_post_url)s, %(price)s, %(land_area)s, %(building_area)s, %(bedrooms)s,
-                                %(bathrooms)s, %(floors)s, %(facilities)s, %(carport)s, %(electricity)s,
-                                %(water)s, %(certificate)s, %(agent_name)s, %(description)s, %(scraped_at)s
-                            ) ON CONFLICT (ig_post_url) DO UPDATE SET
-                                price = EXCLUDED.price,
-                                land_area = EXCLUDED.land_area,
-                                building_area = EXCLUDED.building_area,
-                                bedrooms = EXCLUDED.bedrooms,
-                                bathrooms = EXCLUDED.bathrooms,
-                                floors = EXCLUDED.floors,
-                                facilities = EXCLUDED.facilities,
-                                carport = EXCLUDED.carport,
-                                electricity = EXCLUDED.electricity,
-                                water = EXCLUDED.water,
-                                certificate = EXCLUDED.certificate,
-                                agent_name = EXCLUDED.agent_name,
-                                description = EXCLUDED.description,
-                                scraped_at = EXCLUDED.scraped_at
-                        """, item)
-                conn.commit()
-            except Exception as db_err:
-                print(f"DB Error: {db_err}")
-                conn.rollback()
-            finally:
-                conn.close()
-                    
-        print(f"Scraping selesai. Mendapatkan {len(results)} properti.")
-    except Exception as e:
-        print(f"Scraping gagal: {str(e)}")
+    results = scrape_instagram_account(
+        target_username=req.target_username,
+        viewer_user=req.viewer_username,
+        viewer_pass=req.viewer_password,
+        session_id=req.session_id,
+        limit=req.limit
+    )
+    
+    saved_count = 0
+    db_error = None
+    conn = get_db_connection()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                for item in results:
+                    cur.execute("""
+                        INSERT INTO properties (
+                            ig_post_url, price, land_area, building_area, bedrooms, 
+                            bathrooms, floors, facilities, carport, electricity, 
+                            water, certificate, agent_name, description, scraped_at
+                        ) VALUES (
+                            %(ig_post_url)s, %(price)s, %(land_area)s, %(building_area)s, %(bedrooms)s,
+                            %(bathrooms)s, %(floors)s, %(facilities)s, %(carport)s, %(electricity)s,
+                            %(water)s, %(certificate)s, %(agent_name)s, %(description)s, %(scraped_at)s
+                        ) ON CONFLICT (ig_post_url) DO UPDATE SET
+                            price = EXCLUDED.price,
+                            land_area = EXCLUDED.land_area,
+                            building_area = EXCLUDED.building_area,
+                            bedrooms = EXCLUDED.bedrooms,
+                            bathrooms = EXCLUDED.bathrooms,
+                            floors = EXCLUDED.floors,
+                            facilities = EXCLUDED.facilities,
+                            carport = EXCLUDED.carport,
+                            electricity = EXCLUDED.electricity,
+                            water = EXCLUDED.water,
+                            certificate = EXCLUDED.certificate,
+                            agent_name = EXCLUDED.agent_name,
+                            description = EXCLUDED.description,
+                            scraped_at = EXCLUDED.scraped_at
+                    """, item)
+                    saved_count += 1
+            conn.commit()
+        except Exception as db_err:
+            db_error = str(db_err)
+            conn.rollback()
+        finally:
+            conn.close()
+    
+    return {"scraped": len(results), "saved": saved_count, "db_error": db_error}
 
 @app.post("/api/scrape")
 async def trigger_scrape(req: ScrapeRequest):
@@ -137,10 +137,14 @@ async def trigger_scrape(req: ScrapeRequest):
     req.viewer_username = final_username
     req.viewer_password = final_password
         
-    # Vercel Serverless tidak mendukung BackgroundTasks dengan baik, 
-    # jadi kita jalankan secara synchronous.
-    process_scraping(req)
-    return {"message": f"Proses scraping untuk {req.target_username} selesai!"}
+    try:
+        result = process_scraping(req)
+        msg = f"Scraping selesai: {result['scraped']} data ditemukan, {result['saved']} disimpan ke DB."
+        if result['db_error']:
+            msg += f" DB Error: {result['db_error']}"
+        return {"message": msg, "detail": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Scraping gagal: {str(e)}")
 
 @app.get("/api/properties")
 async def get_properties():
