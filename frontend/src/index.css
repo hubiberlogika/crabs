@@ -365,3 +365,31 @@ td input.edit-input {
   font-size: 1.5rem;
   cursor: pointer;
 }
+
+.readonly-field {
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 12px;
+  border: 1px solid transparent;
+  min-height: 44px;
+  color: var(--text-main);
+  font-size: 0.95rem;
+}
+
+.hover-row:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+.modal-body .half {
+  grid-column: span 1;
+}
+
+select.form-input option {
+  background: #1e293b;
+  color: white;
+}
+
+textarea.form-input {
+  resize: vertical;
+  min-height: 80px;
+}

@@ -61,6 +61,9 @@ def init_db():
             with conn.cursor() as cur:
                 cur.execute("ALTER TABLE properties ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE")
             conn.commit()
+            with conn.cursor() as cur:
+                cur.execute("ALTER TABLE properties ADD COLUMN IF NOT EXISTS photos JSONB DEFAULT '[]'")
+            conn.commit()
         except Exception as e:
             print(f"Error initializing DB: {e}")
         finally:
@@ -235,6 +238,31 @@ async def update_property(prop_id: str, updates: dict):
     finally:
         if conn:
             conn.close()
+
+import json
+
+@app.post("/api/properties/{prop_id}/photos")
+async def upload_photos(prop_id: str, data: dict):
+    """Store base64 photo array for a property."""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database URL belum dikonfigurasi")
+    try:
+        photos = data.get("photos", [])
+        if len(photos) > 8:
+            photos = photos[:8]
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE properties SET photos = %s WHERE id = %s RETURNING id",
+                (json.dumps(photos), prop_id)
+            )
+            conn.commit()
+        return {"message": f"{len(photos)} foto berhasil disimpan"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 @app.delete("/api/properties")
 async def delete_all_properties():

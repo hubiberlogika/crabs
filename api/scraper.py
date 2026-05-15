@@ -1,4 +1,6 @@
 import re
+import time
+import random
 from datetime import datetime
 from typing import Dict, List, Optional
 import logging
@@ -9,6 +11,11 @@ except ImportError:
     InstagrapiClient = None
 
 logger = logging.getLogger(__name__)
+
+# Max safe limit per session to avoid IG blocking
+MAX_SAFE_LIMIT = 20
+MIN_DELAY_SECONDS = 2
+MAX_DELAY_SECONDS = 5
 
 def parse_caption(caption: str) -> Dict[str, Optional[str]]:
     if not caption:
@@ -132,11 +139,14 @@ def scrape_instagram_account(target_username: str, viewer_user: str = None, view
     # Remove @ if provided
     target_username = target_username.lstrip('@')
     
+    # Cap the limit to avoid IG detection
+    safe_limit = min(limit, MAX_SAFE_LIMIT)
+    
     user = cl.user_info_by_username(target_username)
-    medias = cl.user_medias(user.pk, amount=limit)
+    medias = cl.user_medias(user.pk, amount=safe_limit)
     
     results = []
-    for media in medias:
+    for i, media in enumerate(medias):
         caption = media.caption_text or ''
         
         # Abaikan/ignore jika tidak ada deskripsi
@@ -152,5 +162,11 @@ def scrape_instagram_account(target_username: str, viewer_user: str = None, view
         parsed['ig_post_url'] = f'https://www.instagram.com/p/{media.code}/'
         parsed['scraped_at'] = media.taken_at.isoformat() if media.taken_at else datetime.utcnow().isoformat()
         results.append(parsed)
+        
+        # Random delay antara tiap post agar tidak kena rate limit IG
+        if i < len(medias) - 1:
+            delay = random.uniform(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS)
+            logger.info(f"Menunggu {delay:.1f} detik sebelum post berikutnya...")
+            time.sleep(delay)
         
     return results
