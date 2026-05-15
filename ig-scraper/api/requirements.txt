@@ -1,8 +1,0 @@
-fastapi
-uvicorn
-instagrapi
-python-dotenv
-psycopg2-binary
-pydantic
-httpx
-pillow
