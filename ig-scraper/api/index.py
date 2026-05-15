@@ -121,8 +121,18 @@ def process_scraping(req: ScrapeRequest):
 
 @app.post("/api/scrape")
 async def trigger_scrape(req: ScrapeRequest):
-    if not req.session_id and (not req.viewer_username or not req.viewer_password):
+    # Mengambil kredensial dari Vercel Environment Variables jika di UI dikosongkan
+    final_session_id = req.session_id or os.getenv("IG_SESSION_ID", "")
+    final_username = req.viewer_username or os.getenv("IG_USERNAME", "")
+    final_password = req.viewer_password or os.getenv("IG_PASSWORD", "")
+
+    if not final_session_id and (not final_username or not final_password):
         raise HTTPException(status_code=400, detail="Masukkan Session ID atau Username/Password Viewer IG.")
+    
+    # Timpa req dengan data dari ENV agar terbaca oleh scraper
+    req.session_id = final_session_id
+    req.viewer_username = final_username
+    req.viewer_password = final_password
         
     # Vercel Serverless tidak mendukung BackgroundTasks dengan baik, 
     # jadi kita jalankan secara synchronous.
