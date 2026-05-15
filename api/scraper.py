@@ -16,8 +16,8 @@ def parse_caption(caption: str) -> Dict[str, Optional[str]]:
     
     # Harga
     price = None
-    m = re.search(r'\b(?:harga|price|rp|idr)\b\s*[:\-\.=]?\s*([Rr]p\s*)?([\d.,]+\s*(?:milyar|miliar|juta|ribu|m|jt|k|rb)?\b(?:\s*\(?nego\)?)?)', caption, re.IGNORECASE)
-    if m: price = m.group(2).strip()
+    m = re.search(r'(?:(?:harga|price|only|jual)\s*[:\-\.=]?\s*(?:[Rr]p\s*)?|(?:[Rr]p|IDR)\s*)([\d.,]+(?:\s*(?:milyar|miliar|juta|ribu|m|jt|k|rb))?\b(?:\s*\(?nego\)?)?)', caption, re.IGNORECASE)
+    if m: price = m.group(1).strip()
     
     # Luas Tanah
     land_area = None
