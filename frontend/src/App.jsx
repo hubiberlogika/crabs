@@ -30,6 +30,19 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
 
+  // IG Poster settings (saved to localStorage)
+  const [posterSession, setPosterSession]   = useState(localStorage.getItem('ig_poster_session') || '');
+  const [posterUser, setPosterUser]         = useState(localStorage.getItem('ig_poster_user') || '');
+  const [posterPass, setPosterPass]         = useState(localStorage.getItem('ig_poster_pass') || '');
+  const [dailyLimit, setDailyLimit]         = useState(parseInt(localStorage.getItem('ig_daily_limit')) || 3);
+  const [todayCount, setTodayCount]         = useState(0);
+  const [postingId, setPostingId]           = useState(null); // which prop is being posted
+
+  const savePosterSession = (v) => { setPosterSession(v); localStorage.setItem('ig_poster_session', v); };
+  const savePosterUser    = (v) => { setPosterUser(v);    localStorage.setItem('ig_poster_user', v); };
+  const savePosterPass    = (v) => { setPosterPass(v);    localStorage.setItem('ig_poster_pass', v); };
+  const saveDailyLimit    = (v) => { setDailyLimit(v);    localStorage.setItem('ig_daily_limit', v); };
+
   const API_URL = import.meta.env.DEV ? 'http://localhost:8000' : '';
 
   // PWA install prompt
@@ -49,7 +62,45 @@ function App() {
 
   useEffect(() => {
     if (activeTab === 'hasil' || activeTab === 'listing') fetchProperties();
+    if (activeTab === 'listing') fetchTodayCount();
   }, [activeTab]);
+
+  const fetchTodayCount = async () => {
+    try {
+      const res  = await fetch(`${API_URL}/api/ig/post-status`);
+      const data = await res.json();
+      setTodayCount(data.today_count || 0);
+    } catch {}
+  };
+
+  const handlePostToIG = async (prop, e) => {
+    e.stopPropagation();
+    if (!prop.photos?.length) { alert('Tambahkan minimal 1 foto sebelum posting ke IG!'); return; }
+    if (!window.confirm(`Post "${prop.price || 'properti ini'}" ke Instagram?`)) return;
+    setPostingId(prop.id);
+    try {
+      const res  = await fetch(`${API_URL}/api/ig/post`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prop_id: prop.id,
+          session_id: posterSession,
+          poster_username: posterUser,
+          poster_password: posterPass,
+          daily_limit: dailyLimit,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ ${data.message}\n${data.ig_url}`);
+        fetchTodayCount();
+        setProperties(prev => prev.map(p => p.id === prop.id ? { ...p, ig_posted_at: new Date().toISOString() } : p));
+      } else {
+        alert(`❌ Gagal: ${data.detail}`);
+      }
+    } catch { alert('Gagal menghubungi server.'); }
+    finally { setPostingId(null); }
+  };
 
   const fetchProperties = async () => {
     try {
@@ -235,6 +286,43 @@ function App() {
                     🗑️ Hapus Scraping
                   </div>
                 )}
+                {activeTab === 'listing' && (
+                  <span style={{ fontSize:'0.8rem', color: todayCount >= dailyLimit ? '#ef4444' : '#10b981', fontWeight:600, whiteSpace:'nowrap' }}>
+                    📤 {todayCount}/{dailyLimit} post hari ini
+                  </span>
+                )}
+              </div>
+
+              {activeTab === 'listing' && (
+                <details style={{ width:'100%', marginBottom:10, background:'rgba(225,48,108,0.05)', border:'1px solid rgba(225,48,108,0.3)', borderRadius:12, padding:'10px 14px', cursor:'pointer' }}>
+                  <summary style={{ color:'#e1306c', fontWeight:600, fontSize:'0.9rem', outline:'none' }}>
+                    ⚙️ Pengaturan Posting IG
+                  </summary>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:12 }} onClick={e => e.stopPropagation()}>
+                    <div className="form-group" style={{ gridColumn:'1/-1' }}>
+                      <label>Session ID Akun Poster (disarankan)</label>
+                      <input type="text" className="form-input" placeholder="sessionid dari cookies instagram.com"
+                        value={posterSession} onChange={e => savePosterSession(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label>Username Poster</label>
+                      <input type="text" className="form-input" placeholder="akun_poster_ig"
+                        value={posterUser} onChange={e => savePosterUser(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label>Password Poster</label>
+                      <input type="password" className="form-input" placeholder="••••••••"
+                        value={posterPass} onChange={e => savePosterPass(e.target.value)} />
+                    </div>
+                    <div className="form-group" style={{ gridColumn:'1/-1', marginBottom:0 }}>
+                      <label>Batas Posting Per Hari</label>
+                      <select className="form-input" value={dailyLimit} onChange={e => saveDailyLimit(parseInt(e.target.value))}>
+                        {[1,2,3,5,10].map(n => <option key={n} value={n}>{n} post/hari</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </details>
+              )}
 
                 <select className="filter-pill"
                   style={{ background:'transparent', border:'1px solid var(--glass-border)', color:'var(--text-main)', outline:'none' }}
@@ -268,10 +356,27 @@ function App() {
                     {filtered.map(prop => (
                       <tr key={prop.id} onClick={() => setSelectedProp(prop)} className="hover-row" style={{ cursor:'pointer' }}>
                         {TABLE_COLS.map(c => <td key={c.key}>{prop[c.key] || '-'}</td>)}
-                        <td onClick={e => e.stopPropagation()}>
+                        <td onClick={e => e.stopPropagation()} style={{whiteSpace:'nowrap'}}>
                           {prop.ig_post_url
-                            ? <a href={prop.ig_post_url} target="_blank" rel="noreferrer" className="action-link">IG</a>
-                            : <span style={{ color:'var(--text-muted)' }}>-</span>}
+                            ? <a href={prop.ig_post_url} target="_blank" rel="noreferrer" className="action-link" style={{marginRight:6}}>IG</a>
+                            : null}
+                          {activeTab === 'listing' && (
+                            <button
+                              onClick={e => handlePostToIG(prop, e)}
+                              disabled={postingId === prop.id || todayCount >= dailyLimit}
+                              title={todayCount >= dailyLimit ? 'Batas posting harian tercapai' : 'Post ke Instagram'}
+                              style={{
+                                background: prop.ig_posted_at ? 'rgba(16,185,129,0.15)' : 'rgba(225,48,108,0.15)',
+                                color: prop.ig_posted_at ? '#10b981' : '#e1306c',
+                                border: `1px solid ${prop.ig_posted_at ? '#10b981' : '#e1306c'}`,
+                                borderRadius: 8, padding: '3px 8px', fontSize: '0.75rem',
+                                cursor: (postingId === prop.id || todayCount >= dailyLimit) ? 'not-allowed' : 'pointer',
+                                opacity: postingId === prop.id ? 0.6 : 1,
+                              }}
+                            >
+                              {postingId === prop.id ? '⏳' : prop.ig_posted_at ? '✅ Posted' : '📤 Post'}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}

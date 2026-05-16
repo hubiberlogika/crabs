@@ -64,6 +64,20 @@ def init_db():
             with conn.cursor() as cur:
                 cur.execute("ALTER TABLE properties ADD COLUMN IF NOT EXISTS photos JSONB DEFAULT '[]'")
             conn.commit()
+            with conn.cursor() as cur:
+                cur.execute("ALTER TABLE properties ADD COLUMN IF NOT EXISTS ig_posted_at TIMESTAMP")
+            conn.commit()
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS ig_post_log (
+                        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                        property_id UUID,
+                        posted_at TIMESTAMP DEFAULT NOW(),
+                        status TEXT,
+                        ig_url TEXT
+                    )
+                """)
+            conn.commit()
         except Exception as e:
             print(f"Error initializing DB: {e}")
         finally:
@@ -282,3 +296,146 @@ async def delete_all_properties():
     finally:
         if conn:
             conn.close()
+
+# ─── IG Posting ────────────────────────────────────────────────────────────────
+import tempfile, base64 as b64mod, os as _os
+
+class IGPostRequest(BaseModel):
+    prop_id: str
+    session_id: str = ""
+    poster_username: str = ""
+    poster_password: str = ""
+    daily_limit: int = 3
+
+def _build_caption(prop: dict) -> str:
+    lines = ["🏠 *PROPERTI DIJUAL*", ""]
+    if prop.get("price"):         lines.append(f"💰 Harga   : {prop['price']}")
+    if prop.get("land_area"):     lines.append(f"📐 LT      : {prop['land_area']} m²")
+    if prop.get("building_area"): lines.append(f"🏗 LB      : {prop['building_area']} m²")
+    if prop.get("bedrooms"):      lines.append(f"🛏 KT      : {prop['bedrooms']}")
+    if prop.get("bathrooms"):     lines.append(f"🚿 KM      : {prop['bathrooms']}")
+    if prop.get("floors"):        lines.append(f"🏢 Lantai  : {prop['floors']}")
+    if prop.get("certificate"):   lines.append(f"📜 Surat   : {prop['certificate']}")
+    if prop.get("electricity"):   lines.append(f"⚡ Listrik : {prop['electricity']}")
+    if prop.get("water"):         lines.append(f"💧 Air     : {prop['water']}")
+    if prop.get("carport"):       lines.append(f"🚗 Carport : {prop['carport']}")
+    if prop.get("facilities"):    lines.append(f"✨ Fasilitas: {prop['facilities']}")
+    lines += ["", "📞 Info & penawaran:"]
+    if prop.get("agent_name"):    lines.append(f"👤 {prop['agent_name']}")
+    lines += ["", "#properti #rumah #dijual #realestate #investasi #rumahidaman"]
+    return "\n".join(lines)
+
+@app.get("/api/ig/post-status")
+async def get_post_status():
+    """Return how many posts were made today."""
+    conn = get_db_connection()
+    if not conn:
+        return {"today_count": 0}
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) as cnt FROM ig_post_log WHERE DATE(posted_at) = CURRENT_DATE AND status = 'success'"
+            )
+            row = cur.fetchone()
+            return {"today_count": row["cnt"] if row else 0}
+    except Exception as e:
+        return {"today_count": 0, "error": str(e)}
+    finally:
+        conn.close()
+
+@app.post("/api/ig/post")
+async def post_to_ig(req: IGPostRequest):
+    """Post a manual property listing to Instagram."""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database URL belum dikonfigurasi")
+
+    # Resolve credentials from ENV fallback
+    final_session  = req.session_id      or os.getenv("IG_POSTER_SESSION_ID", "") or os.getenv("IG_SESSION_ID", "")
+    final_username = req.poster_username or os.getenv("IG_POSTER_USERNAME", "")
+    final_password = req.poster_password or os.getenv("IG_POSTER_PASSWORD", "")
+
+    if not final_session and (not final_username or not final_password):
+        raise HTTPException(status_code=400, detail="Masukkan Session ID atau Username/Password akun poster IG.")
+
+    try:
+        # Check daily limit
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) as cnt FROM ig_post_log WHERE DATE(posted_at) = CURRENT_DATE AND status = 'success'"
+            )
+            row  = cur.fetchone()
+            done = row["cnt"] if row else 0
+        if done >= req.daily_limit:
+            raise HTTPException(status_code=429, detail=f"Batas posting harian sudah tercapai ({done}/{req.daily_limit}). Coba lagi besok.")
+
+        # Fetch property
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM properties WHERE id = %s", (req.prop_id,))
+            prop = cur.fetchone()
+        if not prop:
+            raise HTTPException(status_code=404, detail="Properti tidak ditemukan")
+
+        prop = dict(prop)
+        photos = prop.get("photos") or []
+        if not photos:
+            raise HTTPException(status_code=400, detail="Properti tidak memiliki foto. Tambahkan minimal 1 foto sebelum posting.")
+
+        # Build caption
+        from scraper import get_client
+        caption = _build_caption(prop)
+
+        # Decode base64 photos to temp files
+        temp_paths = []
+        for b64_str in photos[:8]:
+            if "," in b64_str:
+                b64_str = b64_str.split(",")[1]
+            img_bytes = b64mod.b64decode(b64_str)
+            tf = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+            tf.write(img_bytes)
+            tf.close()
+            temp_paths.append(tf.name)
+
+        # Login and post
+        try:
+            cl = get_client(final_username, final_password, final_session)
+            if len(temp_paths) == 1:
+                media = cl.photo_upload(temp_paths[0], caption)
+            else:
+                media = cl.album_upload(temp_paths, caption)
+            ig_url = f"https://www.instagram.com/p/{media.code}/"
+        finally:
+            for p in temp_paths:
+                try: _os.unlink(p)
+                except: pass
+
+        # Log success and update property
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO ig_post_log (property_id, status, ig_url) VALUES (%s, 'success', %s)",
+                (req.prop_id, ig_url)
+            )
+            cur.execute(
+                "UPDATE properties SET ig_posted_at = NOW() WHERE id = %s",
+                (req.prop_id,)
+            )
+            conn.commit()
+
+        return {"message": "Berhasil diposting ke Instagram!", "ig_url": ig_url}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        err = str(e)
+        # Log failure
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO ig_post_log (property_id, status, ig_url) VALUES (%s, 'failed', %s)",
+                    (req.prop_id, err[:200])
+                )
+                conn.commit()
+        except: pass
+        raise HTTPException(status_code=500, detail=f"Gagal posting: {err}")
+    finally:
+        conn.close()
